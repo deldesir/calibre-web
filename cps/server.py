@@ -33,9 +33,10 @@ try:
     VERSION = 'Gevent ' + _version
     _GEVENT = True
 except ImportError:
-    from .tornado_wsgi import MyWSGIContainer
+    from .tornado_wsgi import MyWSGIContainer, MediaStreamHandler
     from tornado.httpserver import HTTPServer
     from tornado.ioloop import IOLoop
+    from tornado.web import Application
     from tornado import netutil
     from tornado import version as _version
     VERSION = 'Tornado ' + _version
@@ -53,8 +54,7 @@ def _readable_listen_address(address, port):
     return '%s:%s' % (address, port)
 
 
-class WebServer(object):
-
+class WebServer:
     def __init__(self):
         signal.signal(signal.SIGINT, self._killServer)
         signal.signal(signal.SIGTERM, self._killServer)
@@ -240,10 +240,17 @@ class WebServer(object):
             import asyncio
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         try:
-            # Max Buffersize set to 10GB
-            http_server = HTTPServer(MyWSGIContainer(self.app),
-                                     max_buffer_size=1024 * 1024 * 1024 * 10,
-                                     ssl_options=self.ssl_args)
+            # Create Tornado application with explicit streaming route
+            app = Application([
+                (r"/stream/(?P<book_id>\d+)/(?P<book_format>[^\/]+)", MediaStreamHandler),
+                (r".*", MyWSGIContainer(self.app))
+            ])
+
+            http_server = HTTPServer(
+                app,
+                max_buffer_size=1024 * 1024,  # 1MB buffer
+                ssl_options=self.ssl_args
+            )
 
             unix_socket_file = os.environ.get("CALIBRE_UNIX_SOCKET")
             if os.environ.get("LISTEN_FDS") and os.name != 'nt':
